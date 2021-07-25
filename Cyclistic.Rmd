@@ -1,0 +1,258 @@
+---
+title: "Cyclistic Case Study"
+author: "André"
+date: "25/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Cyclistic one year analysis
+
+This analysis is based on the Cyclistic (Divvy dataset) and the work of Kevin Hartman. The purpose of this script is to consolidate downloaded  data into a single dataframe and then conduct simple analysis to help answer the key question: "How do annual members and casual riders use Cyclistic bikes diﬀerently?"
+
+
+## STEP 0: ENVIRONEMNT PREPARATION
+
+We'll start by installing and activating required packages:
+
+```{r}
+#remove comment on the next line to install or update te packages
+#install.packages("tidyverse", "lubridate", "ggplot2")
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+```
+
+
+## STEP 1: COLLECT DATA
+
+We'll now load the downloaded data sets of the last 12 months of usage:
+
+```{r}
+m07_2020 <- read.csv("data/202007-divvy-tripdata.csv")
+m08_2020 <- read.csv("data/202008-divvy-tripdata.csv")
+m09_2020 <- read.csv("data/202009-divvy-tripdata.csv")
+m10_2020 <- read.csv("data/202010-divvy-tripdata.csv")
+m11_2020 <- read.csv("data/202011-divvy-tripdata.csv")
+m12_2020 <- read.csv("data/202012-divvy-tripdata.csv")
+m01_2021 <- read.csv("data/202101-divvy-tripdata.csv")
+m02_2021 <- read.csv("data/202102-divvy-tripdata.csv")
+m03_2021 <- read.csv("data/202103-divvy-tripdata.csv")
+m04_2021 <- read.csv("data/202104-divvy-tripdata.csv")
+m05_2021 <- read.csv("data/202105-divvy-tripdata.csv")
+m06_2021 <- read.csv("data/202106-divvy-tripdata.csv")
+```
+
+
+## STEP 2: WRANGLE DATA AND COMBINE INTO A SINGLE FILE
+
+To join all the files into a single one we need to ensure that the data is consistent.
+We'll start by comparing column names.
+
+```{r}
+colnames(m07_2020)
+colnames(m08_2020)
+colnames(m09_2020)
+colnames(m10_2020)
+colnames(m11_2020)
+colnames(m12_2020)
+colnames(m01_2021)
+colnames(m02_2021)
+colnames(m03_2021)
+colnames(m04_2021)
+colnames(m05_2021)
+colnames(m06_2021)
+```
+All the files have the same column names, so the next step is checking for incongruencies:
+
+```{r}
+str(m07_2020)
+str(m08_2020)
+str(m09_2020)
+str(m10_2020)
+str(m11_2020)
+str(m12_2020)
+str(m01_2021)
+str(m02_2021)
+str(m03_2021)
+str(m04_2021)
+str(m05_2021)
+str(m06_2021)
+```
+We notice that some dataframes have the start_station_id and end_station_id as int instead of chr, so we will chang it to ensures everything goes correctly:
+
+```{r}
+m07_2020 <- mutate(m07_2020, start_station_id = as.character(start_station_id),
+                   end_station_id = as.character(end_station_id))
+m08_2020 <- mutate(m08_2020, start_station_id = as.character(start_station_id),
+                   end_station_id = as.character(end_station_id))
+m09_2020 <- mutate(m09_2020, start_station_id = as.character(start_station_id),
+                   end_station_id = as.character(end_station_id))
+m10_2020 <- mutate(m10_2020, start_station_id = as.character(start_station_id),
+                   end_station_id = as.character(end_station_id))
+m11_2020 <- mutate(m11_2020, start_station_id = as.character(start_station_id),
+                   end_station_id = as.character(end_station_id))
+```
+
+We will now combine all data frames into one:
+
+```{r}
+all_trips <- bind_rows(m07_2020, m08_2020, m09_2020, m10_2020, m11_2020, m12_2020,
+                       m01_2021, m02_2021, m03_2021, m04_2021, m05_2021, m06_2021)
+```
+
+Finally we will remove the unneeded columns, namely the geographical coordinates, station ids and end_Station_name:
+
+```{r}
+all_trips <- all_trips %>%  
+  select(-c(start_lat, start_lng, end_lat, end_lng, start_station_id, end_station_id, end_station_name))
+```
+
+
+## STEP 3: CLEAN UP AND ADD DATA TO PREPARE FOR ANALYSIS
+
+To clean up the data we'll start by inspecting the new table:
+
+```{r}
+colnames(all_trips)
+dim(all_trips)
+head(all_trips)
+str(all_trips)
+```
+From the inspection we can see that the table has 4460151 rows in 6 columns, all with chr type.
+
+There are a few operations we need to perform to ensure that the data is ready for analysis:
+
+*Convert started_at and ended_at columns to datetime
+*Add a column with the day of the week (as day_of_week);
+*Add a calculated field for the length of the ride(as ride_length);
+*Remove bad data.
+
+#### Convert started_at and ended_at columns to datetime
+
+```{r}
+all_trips$started_at <- as_datetime(all_trips$started_at)
+all_trips$ended_at <- as_datetime(all_trips$ended_at)
+```
+
+#### Add a column with the day of the week
+
+```{r}
+Sys.setlocale("LC_TIME","English") 
+all_trips$day_of_week <- format(as.Date(all_trips$started_at), "%A")
+```
+
+#### Add a calculated field for the length of the ride
+
+```{r}
+all_trips$ride_length <- difftime(all_trips$ended_at,all_trips$started_at)
+```
+
+We then need to convert ride_length to numeric to be able to run calculations:
+
+```{r}
+all_trips$ride_length <- as.numeric(as.character(all_trips$ride_length))
+```
+
+#### Remove bad data
+There are some entries with negative ride_length. Since we can't correct this data we will remove those entries.
+
+There are also some entries relative to quality checks that must removed since they are not useful and can create bias on our analysis.
+
+We don't want to lose the original dataframe and will create a new one without the bad data:
+
+```{r}
+all_trips_v2 <- all_trips[!(all_trips$start_station_name == "HUBBARD ST BIKE CHECKING (LBS-WH-TEST)" |
+                              all_trips$start_station_name == "hubbard_test_lws" |
+                              all_trips$start_station_name == "WATSON TESTING - DIVVY" |
+                              all_trips$ride_length<0),]
+```
+
+
+## STEP 4: CONDUCT DESCRIPTIVE ANALYSIS
+
+We'll now analyse the ride length (in seconds):
+
+```{r}
+summary(all_trips_v2$ride_length)
+```
+
+We can also compare members and casual users:
+
+```{r}
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = mean)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = median)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = max)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = min)
+```
+
+Now we can see the average ride time by day of week for both types of users:
+
+```{r}
+all_trips_v2$day_of_week <- ordered(all_trips_v2$day_of_week, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+```
+
+We will now analyze ridership data by type and weekday:
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>%
+  group_by(member_casual, weekday) %>%
+  summarise(number_of_rides = n()
+  ,average_duration = mean(ride_length)) %>%
+  arrange(member_casual, weekday)
+```
+
+And by rideable type:
+
+```{r}
+all_trips_v2 %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(number_of_rides = n()
+  ,average_duration = mean(ride_length)) %>%
+  arrange(member_casual, rideable_type)
+```
+
+Now let's visualize this data.
+
+First the number of rides by rider type:
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+Then by average duration:
+
+```{r}
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+And finally by rideable type:
+
+```{r}
+all_trips_v2 %>% 
+  group_by(member_casual, rideable_type) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, rideable_type)  %>% 
+  ggplot(aes(x = rideable_type, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
